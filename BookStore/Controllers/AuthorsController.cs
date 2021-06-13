@@ -1,11 +1,11 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Threading.Tasks;
-using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 using BookStore.Models;
+using BookStore.Repository;
+using BookStore.Dto;
+using Microsoft.Extensions.Logging;
 
 namespace BookStore.Controllers
 {
@@ -13,18 +13,20 @@ namespace BookStore.Controllers
     [Route("api/Authors")]
     public class AuthorsController : Controller
     {
-        private readonly BookStoreContext _context;
+        private readonly IAuthorRepository _iAuthorRepository;
+        private readonly ILogger<AuthorsController> _logger;
 
-        public AuthorsController(BookStoreContext context)
+        public AuthorsController(IAuthorRepository iAuthorRepository, ILogger<AuthorsController> logger)
         {
-            _context = context;
+            _iAuthorRepository = iAuthorRepository;
+            _logger = logger;
         }
 
         // GET: api/Authors
         [HttpGet]
-        public IEnumerable<Authors> GetAuthors()
+        public async Task<List<AuthorsDto>> GetAllAuthors()
         {
-            return _context.Authors;
+            return await _iAuthorRepository.GetAllAuthors();
         }
 
         // GET: api/Authors/5
@@ -36,7 +38,7 @@ namespace BookStore.Controllers
                 return BadRequest(ModelState);
             }
 
-            var authors = await _context.Authors.SingleOrDefaultAsync(m => m.Id == id);
+            var authors = await _iAuthorRepository.GetAuthorById(id);
 
             if (authors == null)
             {
@@ -48,32 +50,25 @@ namespace BookStore.Controllers
 
         // PUT: api/Authors/5
         [HttpPut("{id}")]
-        public async Task<IActionResult> PutAuthors([FromRoute] int id, [FromBody] Authors authors)
+        public async Task<IActionResult> PutAuthors([FromRoute] int id, [FromBody] AuthorsDto authors)
         {
-            if (!ModelState.IsValid)
-            {
-                return BadRequest(ModelState);
-            }
-
             if (id != authors.Id)
             {
                 return BadRequest();
             }
-
-            _context.Entry(authors).State = EntityState.Modified;
-
             try
             {
-                await _context.SaveChangesAsync();
+                await _iAuthorRepository.UpdateAuthor(id, authors);
             }
-            catch (DbUpdateConcurrencyException)
+            catch (Exception e)
             {
-                if (!AuthorsExists(id))
+                if (!_iAuthorRepository.AuthorExists(id))
                 {
                     return NotFound();
                 }
                 else
                 {
+                    _logger.LogError(e, "Error in PutAuthors");
                     throw;
                 }
             }
@@ -89,10 +84,7 @@ namespace BookStore.Controllers
             {
                 return BadRequest(ModelState);
             }
-
-            _context.Authors.Add(authors);
-            await _context.SaveChangesAsync();
-
+            await _iAuthorRepository.SaveAuthor(authors);
             return CreatedAtAction("GetAuthors", new { id = authors.Id }, authors);
         }
 
@@ -100,26 +92,16 @@ namespace BookStore.Controllers
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteAuthors([FromRoute] int id)
         {
-            if (!ModelState.IsValid)
+            try
             {
-                return BadRequest(ModelState);
+                await _iAuthorRepository.DeleteAuthor(id);
+                return Ok();
             }
-
-            var authors = await _context.Authors.SingleOrDefaultAsync(m => m.Id == id);
-            if (authors == null)
+            catch(Exception e)
             {
+                _logger.LogError(e, "Error in PutBooks");
                 return NotFound();
             }
-
-            _context.Authors.Remove(authors);
-            await _context.SaveChangesAsync();
-
-            return Ok(authors);
-        }
-
-        private bool AuthorsExists(int id)
-        {
-            return _context.Authors.Any(e => e.Id == id);
         }
     }
 }

@@ -1,11 +1,11 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Threading.Tasks;
-using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 using BookStore.Models;
+using BookStore.Repository;
+using BookStore.Dto;
+using Microsoft.Extensions.Logging;
 
 namespace BookStore.Controllers
 {
@@ -13,71 +13,62 @@ namespace BookStore.Controllers
     [Route("api/Books")]
     public class BooksController : Controller
     {
-        private readonly BookStoreContext _context;
+        private readonly IBookRepository _iBookRepository;
+        private readonly ILogger<BooksController> _logger;
 
-        public BooksController(BookStoreContext context)
+        public BooksController(IBookRepository iBookRepository, ILogger<BooksController> logger)
         {
-            _context = context;
+            _iBookRepository = iBookRepository;
+            _logger = logger;
         }
 
         // GET: api/Books
         [HttpGet]
-        public IEnumerable<Books> GetBooks()
+        public Task<List<BooksDto>> GetBooks()
         {
-            return _context.Books;
+            return _iBookRepository.GetAllBooks();
         }
 
         // GET: api/Books/5
         [HttpGet("{id}")]
         public async Task<IActionResult> GetBooks([FromRoute] int id)
         {
-            if (!ModelState.IsValid)
-            {
-                return BadRequest(ModelState);
-            }
-
-            var books = await _context.Books.SingleOrDefaultAsync(m => m.Id == id);
-
+            var books = await _iBookRepository.GetBookById(id);
             if (books == null)
             {
                 return NotFound();
             }
-
             return Ok(books);
         }
 
         // PUT: api/Books/5
         [HttpPut("{id}")]
-        public async Task<IActionResult> PutBooks([FromRoute] int id, [FromBody] Books books)
+        public async Task<IActionResult> PutBooks([FromRoute] int id, [FromBody] BooksDto books)
         {
             if (!ModelState.IsValid)
             {
                 return BadRequest(ModelState);
             }
-
             if (id != books.Id)
             {
                 return BadRequest();
             }
-
-            _context.Entry(books).State = EntityState.Modified;
-
             try
             {
-                await _context.SaveChangesAsync();
+                await _iBookRepository.UpdateBook(id, books);
             }
-            catch (DbUpdateConcurrencyException)
+            catch (Exception e)
             {
-                if (!BooksExists(id))
+                if (!_iBookRepository.BookExists(id))
                 {
                     return NotFound();
                 }
                 else
                 {
+                    _logger.LogError(e, "Error in PutBooks");
                     throw;
                 }
             }
-
             return NoContent();
         }
 
@@ -89,10 +80,7 @@ namespace BookStore.Controllers
             {
                 return BadRequest(ModelState);
             }
-
-            _context.Books.Add(books);
-            await _context.SaveChangesAsync();
-
+            await _iBookRepository.SaveBook(books);
             return CreatedAtAction("GetBooks", new { id = books.Id }, books);
         }
 
@@ -100,26 +88,16 @@ namespace BookStore.Controllers
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteBooks([FromRoute] int id)
         {
-            if (!ModelState.IsValid)
+            try
             {
-                return BadRequest(ModelState);
+                await _iBookRepository.DeleteBook(id);
+                return Ok();
             }
-
-            var books = await _context.Books.SingleOrDefaultAsync(m => m.Id == id);
-            if (books == null)
+            catch(Exception e)
             {
+                _logger.LogError(e, "Error in DeleteBooks");
                 return NotFound();
             }
-
-            _context.Books.Remove(books);
-            await _context.SaveChangesAsync();
-
-            return Ok(books);
-        }
-
-        private bool BooksExists(int id)
-        {
-            return _context.Books.Any(e => e.Id == id);
         }
     }
 }
